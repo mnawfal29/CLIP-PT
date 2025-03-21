@@ -1,0 +1,4 @@
+data/
+splits/
+**/__pycache__
+wandb/
