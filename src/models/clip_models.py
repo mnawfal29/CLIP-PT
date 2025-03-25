@@ -308,4 +308,4 @@ class CLIPForPromptTuning(nn.Module):
         img_embed = img_proj / img_proj.norm(dim=-1, keepdim=True)
         sim = 100 * img_embed @ text_embed.T
 
-        return sim
+        return sim, text_embed

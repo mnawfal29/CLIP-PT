@@ -9,7 +9,7 @@ from avalanche.training.templates import SupervisedTemplate
 from avalanche.evaluation.metrics import accuracy_metrics, loss_metrics, forgetting_metrics
 from avalanche.logging import InteractiveLogger, WandBLogger
 from avalanche.training.plugins import EvaluationPlugin
-from src.strategies.metrics import WeightedAccuracyPluginMetric
+from src.strategies.loss import CrossDispersionLoss
 
 from src.models import CLIPForPromptTuning  # Assuming this is your custom model
 
@@ -58,7 +58,6 @@ class CLIPPT(SupervisedTemplate):
 
         # Set up evaluation plugin
         eval_plugin = EvaluationPlugin(
-            # WeightedAccuracyPluginMetric(),
             accuracy_metrics(epoch=True, experience=True, stream=True),
             loss_metrics(epoch=True, experience=True, stream=True),
             forgetting_metrics(experience=True, stream=True),
@@ -69,7 +68,7 @@ class CLIPPT(SupervisedTemplate):
         super().__init__(
             model=model,
             optimizer=None,  # Optimizer will be set in `make_optimizer`
-            criterion=nn.CrossEntropyLoss(),
+            criterion=CrossDispersionLoss(),
             train_mb_size=train_mb_size,
             train_epochs=train_epochs,
             eval_mb_size=eval_mb_size,
@@ -93,12 +92,11 @@ class CLIPPT(SupervisedTemplate):
         return self.mbatch[1].long().to(self.device)
 
     def forward(self):
-        logits = self.model(self.mb_x, self.text_tokens, self.attn_mask)
+        logits, self.text_out = self.model(self.mb_x, self.text_tokens, self.attn_mask)
         return logits
 
     def criterion(self):
-        print(self.mb_output.shape, self.mb_y.shape)
-        loss = self._criterion(self.mb_output, self.mb_y)
+        loss = self._criterion(self.mb_output, self.mb_y, self.text_out)
         return loss
 
     def make_optimizer(self, reset_optimizer_state=True):
@@ -176,7 +174,4 @@ class CLIPPT(SupervisedTemplate):
         """
         current_experience = self.clock.train_exp_counter
         eval_stream = experience_stream[:current_experience]  # Evaluate on first n experiences
-        print()
-        print()
-        print(len(eval_stream))
         return super().eval(eval_stream)

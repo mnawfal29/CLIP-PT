@@ -9,6 +9,7 @@ from transformers import CLIPProcessor
 from utils import seed_everything, parse_args
 from src.datasets import CIFAR100FSCIL, CUB200FSCIL, MiniImageNetFSCIL
 from src.strategies import CLIPPT
+from src.strategies.loss import CrossDispersionLoss
 from avalanche.benchmarks import benchmark_from_datasets
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -22,7 +23,7 @@ datasets = dict(cub200=dict(dataset=CUB200FSCIL, train_epochs_base_class=6, trai
                 miniimagenet=dict(dataset=MiniImageNetFSCIL, train_mb_size_base_class=32, train_epochs_base_class=5))
 
 args = parse_args()
-print(args)
+print(vars(args))
 
 n_runs = args.n_runs
 dataset_name = args.dataset
@@ -30,54 +31,56 @@ few_shot_examples = [5]
 
 assert n_runs > 0, "Number of runs must be greater than 0."
 # NOTE: Seeds used in the paper for 5 runs are: seeds = [42, 13, 50, 24, 69]
-seeds = args.seeds if args.seeds else [i for i in range(42, 42 + n_runs)]
+# seeds = args.seeds if args.seeds else [i for i in range(42, 42 + n_runs)]
 
 img_preprocess = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16").feature_extractor
 
 if __name__ == "__main__":
-    wandb.init(project="fyp", config=vars(args))
+    wandb.init(project="fyp", save_code=True, settings=wandb.Settings(code_dir="."), config=vars(args))
+    wandb.define_metric("Top1_Acc_Stream/eval_phase/test_stream", summary="mean")
+    wandb.define_metric("Loss_Stream/eval_phase/test_stream", summary="mean")
+    wandb.define_metric("StreamForgetting/eval_phase/test_stream", summary="mean")
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    for run in range(n_runs):
-        exp_name = f"model_{dataset_name}_L_g_{args.L_g}_L_s_{args.L_s}_D_g_{args.D_g}_D_s_{args.D_s}_TRM_{args.text_replace_method}_VRM_{args.vision_replace_method}_run_{run+1}"
+    exp_name = f"model_{dataset_name}_L_g_{args.L_g}_L_s_{args.L_s}_D_g_{args.D_g}_D_s_{args.D_s}_TRM_{args.text_replace_method}_VRM_{args.vision_replace_method}"
 
-        Dataset = datasets[dataset_name]["dataset"]
-        Dataset = Dataset(transform=img_preprocess)
-        train_mb_size_base_class = datasets[dataset_name]["train_mb_size_base_class"]
-        train_epochs_base_class = datasets[dataset_name]["train_epochs_base_class"]
+    Dataset = datasets[dataset_name]["dataset"]
+    Dataset = Dataset(transform=img_preprocess)
+    train_mb_size_base_class = datasets[dataset_name]["train_mb_size_base_class"]
+    train_epochs_base_class = datasets[dataset_name]["train_epochs_base_class"]
 
-        seed_everything(seeds[run])
+    seed_everything(args.seed)
 
-        strategy = CLIPPT(
-            L_g=args.L_g,
-            L_s=args.L_s,
-            D_g=args.D_g,
-            D_s=args.D_s,
-            text_replace_method=args.text_replace_method,
-            vision_replace_method=args.vision_replace_method,
-            regularization_method="balance",
-            train_mb_size_base_class=train_mb_size_base_class,
-            train_epochs_base_class=train_epochs_base_class,
-            num_classes_per_exp=Dataset.num_classes_per_exp,
-            classes_per_exp=Dataset.classes_per_exp,
-            text_label_mapping=Dataset.text_label_mapping,
-            lr=0.00325,
-            use_scheduler=True,
-            eval_mb_size=64,
-            device=device
-        )
+    strategy = CLIPPT(
+        L_g=args.L_g,
+        L_s=args.L_s,
+        D_g=args.D_g,
+        D_s=args.D_s,
+        text_replace_method=args.text_replace_method,
+        vision_replace_method=args.vision_replace_method,
+        regularization_method="balance",
+        train_mb_size_base_class=train_mb_size_base_class,
+        train_epochs_base_class=train_epochs_base_class,
+        num_classes_per_exp=Dataset.num_classes_per_exp,
+        classes_per_exp=Dataset.classes_per_exp,
+        text_label_mapping=Dataset.text_label_mapping,
+        lr=0.00325,
+        use_scheduler=True,
+        eval_mb_size=64,
+        device=device
+    )
 
-        print(strategy.model)
-        wandb.watch(strategy.model)
+    wandb.watch(strategy.model, criterion=CrossDispersionLoss(), log_freq=100, log_graph=True)
+    print(strategy.model)
 
-        experiences = benchmark_from_datasets(train = Dataset.train_stream, test = Dataset.eval_stream)
+    experiences = benchmark_from_datasets(train = Dataset.train_stream, test = Dataset.eval_stream)
 
-        for experience in experiences.train_stream:
-            strategy.train(experience)
-            strategy.eval(experiences.test_stream)
+    for experience in experiences.train_stream:
+        strategy.train(experience)
+        strategy.eval(experiences.test_stream)
 
-        torch.cuda.empty_cache()
-        gc.collect()
+    torch.cuda.empty_cache()
+    gc.collect()
 
-        del strategy
-        del experiences
+    del strategy
+    del experiences
