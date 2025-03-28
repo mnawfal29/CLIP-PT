@@ -36,7 +36,7 @@ assert n_runs > 0, "Number of runs must be greater than 0."
 img_preprocess = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16").feature_extractor
 
 if __name__ == "__main__":
-    wandb.init(project="fyp", save_code=True, settings=wandb.Settings(code_dir="."), config=vars(args))
+    wandb.init(project="clip-pt", save_code=True, settings=wandb.Settings(code_dir="."), config=vars(args))
     wandb.define_metric("Top1_Acc_Stream/eval_phase/test_stream", summary="mean")
     wandb.define_metric("Loss_Stream/eval_phase/test_stream", summary="mean")
     wandb.define_metric("StreamForgetting/eval_phase/test_stream", summary="mean")
@@ -75,9 +75,22 @@ if __name__ == "__main__":
 
     experiences = benchmark_from_datasets(train = Dataset.train_stream, test = Dataset.eval_stream)
 
-    for experience in experiences.train_stream:
+    for experience_id, experience in enumerate(experiences.train_stream):
         strategy.train(experience)
         strategy.eval(experiences.test_stream)
+
+        # Filter parameters that require gradients
+        model_weights = {k: v for k, v in strategy.model.state_dict().items() if v.requires_grad}
+
+        # Save model checkpoint
+        model_path = f"checkpoints/{exp_name}_exp_{experience_id}.pt"
+        os.makedirs("checkpoints", exist_ok=True)
+        torch.save(model_weights, model_path)
+
+        # Log to Weights & Biases
+        wandb.save(model_path)
+
+        print(f"Saved model checkpoint for experience {experience_id} at {model_path}")
 
     torch.cuda.empty_cache()
     gc.collect()
