@@ -194,14 +194,15 @@ class MultiHeadSelfAttention(nn.Module):
         
         assert self.head_dim * num_heads == embed_dim, "Embedding dimension must be divisible by number of heads"
         
-        self.qkv_proj = nn.Linear(input_dim, embed_dim * 3)  # Single projection for Q, K, V
-        self.out_proj = nn.Linear(embed_dim, embed_dim)
+        # self.qkv_proj = nn.Linear(input_dim, embed_dim * 3)  # Single projection for Q, K, V
+        # self.out_proj = nn.Linear(embed_dim, embed_dim)
         
     def forward(self, x):
         batch_size, seq_length, input_dim = x.shape
         
         # Compute Q, K, V
-        qkv = self.qkv_proj(x)  # Shape: (batch_size, seq_length, 3 * embed_dim)
+        qkv = x.repeat(1, 1, 3)
+        # qkv = self.qkv_proj(x)  # Shape: (batch_size, seq_length, 3 * embed_dim)
         qkv = qkv.reshape(batch_size, seq_length, self.num_heads, 3 * self.head_dim)
         q, k, v = qkv.chunk(3, dim=-1)  # Each shape: (batch_size, seq_length, num_heads, head_dim)
         
@@ -215,7 +216,8 @@ class MultiHeadSelfAttention(nn.Module):
         out = torch.matmul(attn_weights, v)  # (batch_size, num_heads, seq_length, head_dim)
         out = out.permute(0, 2, 1, 3).reshape(batch_size, seq_length, self.embed_dim)
         
-        return self.out_proj(out)  # Final linear projection
+        # return self.out_proj(out)  # Final linear projection
+        return out
     
 
 ################################
@@ -263,11 +265,12 @@ class CLIPForPromptTuning(nn.Module):
         for p in self.parameters():
             p.requires_grad = False
 
-        self.prompt_proj = MultiHeadSelfAttention(self.text_model.d_model, self.vision_model.d_model)
-        # self.prompt_proj = nn.Linear(self.text_model.d_model, self.vision_model.d_model)
+        self.transfomer_layer = MultiHeadSelfAttention(self.vision_model.d_model, self.vision_model.d_model)
         self.g_v_values = nn.Parameter(torch.zeros(D_g, L_g, self.vision_model.d_model))
         self.g_l_values = nn.Parameter(torch.zeros(D_g, L_g, self.text_model.d_model))
-        self.s_values = nn.Parameter(torch.zeros(D_s, L_s, self.text_model.d_model))
+        self.s_values = nn.Parameter(torch.zeros(D_s, 2*L_s, self.vision_model.d_model))
+        self.prompt_proj_text = nn.Linear(self.vision_model.d_model, self.text_model.d_model)
+        self.prompt_proj_vision = nn.Linear(self.vision_model.d_model, self.vision_model.d_model)
 
         nn.init.xavier_uniform_(self.g_v_values.data)
         nn.init.xavier_uniform_(self.g_l_values.data)
@@ -294,8 +297,11 @@ class CLIPForPromptTuning(nn.Module):
 
         text_g_prompt = self.g_l_values.repeat(text_tokens.size(0), 1, 1, 1).to(device)
         vision_g_prompt = self.g_v_values.repeat(batch_size, 1, 1, 1)
-        text_s_prompt = self.s_values.repeat(text_tokens.size(0), 1, 1, 1).to(device)
-        vision_s_prompt = self.prompt_proj(self.s_values).repeat(batch_size, 1, 1, 1)
+        processed_s_values = self.transfomer_layer(self.s_values)
+        text_s_prompt = self.prompt_proj_text(processed_s_values[:, :self.L_s])
+        text_s_prompt = text_s_prompt.repeat(text_tokens.size(0), 1, 1, 1).to(device)
+        vision_s_prompt = self.prompt_proj_vision(processed_s_values[:, self.L_s:])
+        vision_s_prompt = vision_s_prompt.repeat(batch_size, 1, 1, 1)
 
         text_out = self.text_model(text_tokens, attn_mask, text_g_prompt, text_s_prompt)
         img_out = self.vision_model(image, vision_g_prompt, vision_s_prompt)
