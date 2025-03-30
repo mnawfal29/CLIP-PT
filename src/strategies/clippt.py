@@ -144,10 +144,8 @@ class CLIPPT(SupervisedTemplate):
             self.train_epochs = 5
 
         if self.regularization_method == 'freeze' and self.clock.train_exp_counter > 0:
-            self.model.g_v_values.requires_grad = False
-            self.model.g_l_values.requires_grad = False
-            self.model.s_values.requires_grad = False
-            self.model.prompt_proj.requires_grad = False
+            for param in self.model.parameters():
+                param.requires_grad = False
 
         super()._before_training_exp()
         self.actual_text_labels = [self.text_label_mapping[i] for i in self.classes_per_exp[self.clock.train_exp_counter]]
@@ -160,10 +158,7 @@ class CLIPPT(SupervisedTemplate):
         if self.clock.train_exp_counter > 0 and self.regularization_method == 'balance':
             reg_lambda = self.n_classes_per_exp[self.clock.train_exp_counter] / sum(
                 self.n_classes_per_exp[:self.clock.train_exp_counter])
-            self.model.g_v_values.grad *= reg_lambda
-            self.model.g_l_values.grad *= reg_lambda
-            self.model.s_values.grad *= reg_lambda
-            for param in self.model.prompt_proj.parameters():
+            for param in self.model.parameters():
                 if param.grad is not None:
                     param.grad *= reg_lambda
 
