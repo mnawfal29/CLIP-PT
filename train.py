@@ -83,6 +83,17 @@ if __name__ == "__main__":
         strategy.train(experience)
         strategy.eval(experiences.test_stream)
 
+        # Filter parameters that require gradients
+        model_weights = {k: v for k, v in strategy.model.state_dict().items() if v.requires_grad}
+
+        # Save model checkpoint
+        model_path = f"checkpoints/{exp_name}_exp_{experience_id}.pt"
+        os.makedirs("checkpoints", exist_ok=True)
+        torch.save(model_weights, model_path)
+
+        wandb.save(model_path)
+        print(f"Saved model checkpoint for experience {experience_id} at {model_path}")
+
     torch.cuda.empty_cache()
     gc.collect()
 
