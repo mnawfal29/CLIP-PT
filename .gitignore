@@ -3,3 +3,4 @@ splits/
 **/__pycache__
 wandb/
 checkpoints/
+logs/

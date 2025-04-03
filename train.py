@@ -18,7 +18,7 @@ os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 warnings.filterwarnings("ignore")
 
-datasets = dict(cub200=dict(dataset=CUB200FSCIL, train_epochs_base_class=6, train_mb_size_base_class=4,),
+datasets = dict(cub200=dict(dataset=CUB200FSCIL, train_epochs_base_class=6, train_mb_size_base_class=4),
                 cifar100=dict(dataset=CIFAR100FSCIL, train_mb_size_base_class=32, train_epochs_base_class=8),
                 miniimagenet=dict(dataset=MiniImageNetFSCIL, train_mb_size_base_class=32, train_epochs_base_class=5))
 
@@ -35,12 +35,12 @@ assert n_runs > 0, "Number of runs must be greater than 0."
 img_preprocess = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16").feature_extractor
 
 cfg = vars(args)
-cfg["description"] = "orginal architecture with prompt tuning"
+cfg["description"] = "new architecture with prompt tuning"
 if args.D_s + args.D_g != 12:
     args.D_g = 12 - args.D_s
 
 if __name__ == "__main__":
-    wandb.init(project="clip-pt", save_code=True, settings=wandb.Settings(code_dir="."), config=cfg)
+    wandb.init(project="clip-pt-new", save_code=True, settings=wandb.Settings(code_dir="."), config=cfg)
     wandb.define_metric("Top1_Acc_Stream/eval_phase/test_stream", summary="mean")
     wandb.define_metric("Loss_Stream/eval_phase/test_stream", summary="mean")
     wandb.define_metric("StreamForgetting/eval_phase/test_stream", summary="mean")
@@ -75,7 +75,7 @@ if __name__ == "__main__":
         device=device
     )
 
-    wandb.watch(strategy.model, criterion=CrossDispersionLoss(args.txt_beta), log_freq=100, log_graph=True)
+    wandb.watch(strategy.model, criterion=CrossDispersionLoss(args.txt_beta), log_freq=100)
     print(strategy.model)
     trainable_params = sum(p.numel() for p in strategy.model.parameters() if p.requires_grad)
     trainable_size = sum(p.numel() * p.element_size() for p in strategy.model.parameters() if p.requires_grad)
