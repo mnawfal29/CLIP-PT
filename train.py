@@ -34,8 +34,13 @@ assert n_runs > 0, "Number of runs must be greater than 0."
 
 img_preprocess = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16").feature_extractor
 
+cfg = vars(args)
+cfg["description"] = "orginal architecture with prompt tuning"
+if args.D_s + args.D_g != 12:
+    args.D_g = 12 - args.D_s
+
 if __name__ == "__main__":
-    wandb.init(project="clip-pt", save_code=True, settings=wandb.Settings(code_dir="."), config=vars(args))
+    wandb.init(project="clip-pt", save_code=True, settings=wandb.Settings(code_dir="."), config=cfg)
     wandb.define_metric("Top1_Acc_Stream/eval_phase/test_stream", summary="mean")
     wandb.define_metric("Loss_Stream/eval_phase/test_stream", summary="mean")
     wandb.define_metric("StreamForgetting/eval_phase/test_stream", summary="mean")
@@ -64,12 +69,13 @@ if __name__ == "__main__":
         classes_per_exp=Dataset.classes_per_exp,
         text_label_mapping=Dataset.text_label_mapping,
         lr=0.00325,
+        txt_beta=args.txt_beta,
         use_scheduler=True,
         eval_mb_size=64,
         device=device
     )
 
-    wandb.watch(strategy.model, criterion=CrossDispersionLoss(), log_freq=100, log_graph=True)
+    wandb.watch(strategy.model, criterion=CrossDispersionLoss(args.txt_beta), log_freq=100, log_graph=True)
     print(strategy.model)
     trainable_params = sum(p.numel() for p in strategy.model.parameters() if p.requires_grad)
     trainable_size = sum(p.numel() * p.element_size() for p in strategy.model.parameters() if p.requires_grad)
