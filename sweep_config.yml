@@ -1,0 +1,16 @@
+program: train.py
+method: bayes  # Change to "random" or "bayes" if needed
+metric:
+  name: Top1_Acc_Stream/eval_phase/test_stream.mean  # Change based on your tracked metric
+  goal: maximize
+parameters:
+  L:
+    values: [2, 4, 6]
+  D_s:
+    values: [0, 2, 4, 6, 8, 10]
+  vision_replace_method:
+    values: ["replace", "accumulate"]
+  txt_beta:
+    values: [0, 0.01, 0.1]
+  seed:
+    values: [13, 42]

@@ -29,6 +29,7 @@ class CLIPPT(SupervisedTemplate):
         regularization_method: str = 'balance',
         manual_prompt: str = '[].',
         lr: float = 0.00325,
+        txt_beta: float = 0,
         train_mb_size_base_class: int = 4,
         train_epochs_base_class: int = 3,
         use_scheduler: bool = True,
@@ -68,7 +69,7 @@ class CLIPPT(SupervisedTemplate):
         super().__init__(
             model=model,
             optimizer=None,  # Optimizer will be set in `make_optimizer`
-            criterion=CrossDispersionLoss(),
+            criterion=CrossDispersionLoss(txt_beta),
             train_mb_size=train_mb_size,
             train_epochs=train_epochs,
             eval_mb_size=eval_mb_size,

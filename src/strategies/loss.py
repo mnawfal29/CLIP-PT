@@ -2,10 +2,10 @@ import torch
 import torch.nn.functional as F
 
 class CrossDispersionLoss(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, txt_beta=0):
         super().__init__()
         self.txt_rbf_t = 2.0 # Hyperparameter for text dispersion loss
-        self.txt_beta = 0.1 # Weight for text dispersion loss
+        self.txt_beta = txt_beta # Weight for text dispersion loss
 
     def forward(self, logits, targets, text_features):
         """
