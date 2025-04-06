@@ -1,11 +1,14 @@
 program: train.py
-method: bayes  # Change to "random" or "bayes" if needed
+project: clip-pt-new
+method: grid  # Change to "random" or "bayes" if needed
 metric:
   name: Top1_Acc_Stream/eval_phase/test_stream.mean  # Change based on your tracked metric
   goal: maximize
 parameters:
-  L:
-    values: [2, 4, 6]
+  L_s:
+    values: [4]
+  L_g:
+    values: [4]
   D_s:
     values: [0, 2, 4, 6, 8, 10]
   vision_replace_method:
