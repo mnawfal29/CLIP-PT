@@ -185,45 +185,43 @@ class CLIPVisionModelForPromptTuning(nn.Module):
 
 
 class MultiHeadSelfAttention(nn.Module):
-    def __init__(self, input_dim, embed_dim, num_heads=4, dropout=0.1):
+    def __init__(self, input_dim, embed_dim, num_heads=4):
         super(MultiHeadSelfAttention, self).__init__()
         self.input_dim = input_dim
         self.embed_dim = embed_dim
         self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
         
-        assert input_dim == embed_dim, "Input dimension must match embedding dimension when not using an input projection"
-        
-        # Use PyTorch's MultiheadAttention module
-        self.self_attn = nn.MultiheadAttention(
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True  # Expects input shape (batch_size, seq_len, embed_dim)
-        )
+        assert self.head_dim * num_heads == embed_dim, "Embedding dimension must be divisible by number of heads"
+        assert input_dim == embed_dim, "Input dimension must match embedding dimension"
         
         # Layer normalization for the add-norm pattern
         self.norm = nn.LayerNorm(embed_dim)
         
-        # Optional dropout for regularization
-        self.dropout = nn.Dropout(dropout)
-        
     def forward(self, x):
-        # Store input as residual for skip connection
+        batch_size, seq_length, input_dim = x.shape
+        
+        # Store input as residual
         residual = x
         
-        # Apply self-attention
-        # PyTorch's MultiheadAttention returns attn_output, attn_output_weights
-        attn_output, _ = self.self_attn(
-            query=x,
-            key=x,
-            value=x
-        )
+        # Use PyTorch's scaled_dot_product_attention function directly
+        # Reshape x to separate into heads: (batch_size, seq_length, num_heads, head_dim)
+        q = k = v = x.view(batch_size, seq_length, self.num_heads, self.head_dim)
         
-        # Apply dropout
-        attn_output = self.dropout(attn_output)
+        # Transpose to the shape expected by scaled_dot_product_attention
+        # (batch_size, num_heads, seq_length, head_dim)
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
         
-        # Add skip connection
-        output = residual + attn_output
+        # Apply scaled dot-product attention
+        attention_output = F.scaled_dot_product_attention(q, k, v)
+        
+        # Reshape back to original dimensions
+        attention_output = attention_output.transpose(1, 2).contiguous().view(batch_size, seq_length, self.embed_dim)
+        
+        # Add residual connection
+        output = residual + attention_output
         
         # Apply layer normalization
         output = self.norm(output)
