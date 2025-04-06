@@ -185,39 +185,50 @@ class CLIPVisionModelForPromptTuning(nn.Module):
 
 
 class MultiHeadSelfAttention(nn.Module):
-    def __init__(self, input_dim, embed_dim, num_heads=4):
+    def __init__(self, input_dim, embed_dim, num_heads=4, dropout=0.1):
         super(MultiHeadSelfAttention, self).__init__()
         self.input_dim = input_dim
         self.embed_dim = embed_dim
         self.num_heads = num_heads
-        self.head_dim = embed_dim // num_heads
         
-        assert self.head_dim * num_heads == embed_dim, "Embedding dimension must be divisible by number of heads"
+        assert input_dim == embed_dim, "Input dimension must match embedding dimension when not using an input projection"
         
-        # self.qkv_proj = nn.Linear(input_dim, embed_dim * 3)  # Single projection for Q, K, V
-        # self.out_proj = nn.Linear(embed_dim, embed_dim)
+        # Use PyTorch's MultiheadAttention module
+        self.self_attn = nn.MultiheadAttention(
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True  # Expects input shape (batch_size, seq_len, embed_dim)
+        )
+        
+        # Layer normalization for the add-norm pattern
+        self.norm = nn.LayerNorm(embed_dim)
+        
+        # Optional dropout for regularization
+        self.dropout = nn.Dropout(dropout)
         
     def forward(self, x):
-        batch_size, seq_length, input_dim = x.shape
+        # Store input as residual for skip connection
+        residual = x
         
-        # Compute Q, K, V
-        qkv = x.repeat(1, 1, 3)
-        # qkv = self.qkv_proj(x)  # Shape: (batch_size, seq_length, 3 * embed_dim)
-        qkv = qkv.reshape(batch_size, seq_length, self.num_heads, 3 * self.head_dim)
-        q, k, v = qkv.chunk(3, dim=-1)  # Each shape: (batch_size, seq_length, num_heads, head_dim)
+        # Apply self-attention
+        # PyTorch's MultiheadAttention returns attn_output, attn_output_weights
+        attn_output, _ = self.self_attn(
+            query=x,
+            key=x,
+            value=x
+        )
         
-        # Transpose for multi-head processing: (batch_size, num_heads, seq_length, head_dim)
-        q, k, v = [t.permute(0, 2, 1, 3) for t in (q, k, v)]
+        # Apply dropout
+        attn_output = self.dropout(attn_output)
         
-        # Scaled dot-product attention
-        scores = torch.matmul(q, k.transpose(-2, -1)) / (self.head_dim ** 0.5)
-        attn_weights = F.softmax(scores, dim=-1)
+        # Add skip connection
+        output = residual + attn_output
         
-        out = torch.matmul(attn_weights, v)  # (batch_size, num_heads, seq_length, head_dim)
-        out = out.permute(0, 2, 1, 3).reshape(batch_size, seq_length, self.embed_dim)
+        # Apply layer normalization
+        output = self.norm(output)
         
-        # return self.out_proj(out)  # Final linear projection
-        return out
+        return output
     
 
 ################################
@@ -271,6 +282,10 @@ class CLIPForPromptTuning(nn.Module):
         self.s_values = nn.Parameter(torch.zeros(D_s, 2*L_s, self.vision_model.d_model))
         self.prompt_proj_text = nn.Linear(self.vision_model.d_model, self.text_model.d_model)
         self.prompt_proj_vision = nn.Linear(self.vision_model.d_model, self.vision_model.d_model)
+        
+        # Add layer normalization for residual connections
+        self.text_norm = nn.LayerNorm(self.text_model.d_model)
+        self.vision_norm = nn.LayerNorm(self.vision_model.d_model)
 
         nn.init.xavier_uniform_(self.g_v_values.data)
         nn.init.xavier_uniform_(self.g_l_values.data)
@@ -298,9 +313,23 @@ class CLIPForPromptTuning(nn.Module):
         text_g_prompt = self.g_l_values.repeat(text_tokens.size(0), 1, 1, 1).to(device)
         vision_g_prompt = self.g_v_values.repeat(batch_size, 1, 1, 1)
         processed_s_values = self.transfomer_layer(self.s_values)
-        text_s_prompt = self.prompt_proj_text(processed_s_values[:, :self.L_s])
+        
+        # Store original s_values for residual connection
+        text_s_residual = processed_s_values[:, :self.L_s]
+        vision_s_residual = processed_s_values[:, self.L_s:]
+        
+        # Apply projections
+        text_s_prompt = self.prompt_proj_text(text_s_residual)
+        
+        # Add residual connection (need to project residual to match dimensions) and normalize
+        text_s_prompt = self.text_norm(text_s_prompt + self.prompt_proj_text(text_s_residual))
         text_s_prompt = text_s_prompt.repeat(text_tokens.size(0), 1, 1, 1).to(device)
-        vision_s_prompt = self.prompt_proj_vision(processed_s_values[:, self.L_s:])
+        
+        # Apply projections for vision
+        vision_s_prompt = self.prompt_proj_vision(vision_s_residual)
+        
+        # Add residual connection and normalize
+        vision_s_prompt = self.vision_norm(vision_s_prompt + self.prompt_proj_vision(vision_s_residual))
         vision_s_prompt = vision_s_prompt.repeat(batch_size, 1, 1, 1)
 
         text_out = self.text_model(text_tokens, attn_mask, text_g_prompt, text_s_prompt)
