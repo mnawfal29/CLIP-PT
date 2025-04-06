@@ -280,10 +280,6 @@ class CLIPForPromptTuning(nn.Module):
         self.s_values = nn.Parameter(torch.zeros(D_s, 2*L_s, self.vision_model.d_model))
         self.prompt_proj_text = nn.Linear(self.vision_model.d_model, self.text_model.d_model)
         self.prompt_proj_vision = nn.Linear(self.vision_model.d_model, self.vision_model.d_model)
-        
-        # Add layer normalization for residual connections
-        self.text_norm = nn.LayerNorm(self.text_model.d_model)
-        self.vision_norm = nn.LayerNorm(self.vision_model.d_model)
 
         nn.init.xavier_uniform_(self.g_v_values.data)
         nn.init.xavier_uniform_(self.g_l_values.data)
@@ -312,22 +308,12 @@ class CLIPForPromptTuning(nn.Module):
         vision_g_prompt = self.g_v_values.repeat(batch_size, 1, 1, 1)
         processed_s_values = self.transfomer_layer(self.s_values)
         
-        # Store original s_values for residual connection
-        text_s_residual = processed_s_values[:, :self.L_s]
-        vision_s_residual = processed_s_values[:, self.L_s:]
-        
         # Apply projections
-        text_s_prompt = self.prompt_proj_text(text_s_residual)
-        
-        # Add residual connection (need to project residual to match dimensions) and normalize
-        text_s_prompt = self.text_norm(text_s_prompt + self.prompt_proj_text(text_s_residual))
+        text_s_prompt = self.prompt_proj_text(processed_s_values[:, :self.L_s])
         text_s_prompt = text_s_prompt.repeat(text_tokens.size(0), 1, 1, 1).to(device)
         
         # Apply projections for vision
-        vision_s_prompt = self.prompt_proj_vision(vision_s_residual)
-        
-        # Add residual connection and normalize
-        vision_s_prompt = self.vision_norm(vision_s_prompt + self.prompt_proj_vision(vision_s_residual))
+        vision_s_prompt = self.prompt_proj_vision(processed_s_values[:, self.L_s:])
         vision_s_prompt = vision_s_prompt.repeat(batch_size, 1, 1, 1)
 
         text_out = self.text_model(text_tokens, attn_mask, text_g_prompt, text_s_prompt)
