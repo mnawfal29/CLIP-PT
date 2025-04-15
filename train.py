@@ -88,12 +88,16 @@ if __name__ == "__main__":
         strategy.eval(experiences.test_stream)
 
         # Filter parameters that require gradients
-        model_weights = {k: v for k, v in strategy.model.state_dict().items() if v.requires_grad}
+        trainable_weights = {
+            name: param for name, param in strategy.model.state_dict().items()
+            if strategy.model.get_parameter(name).requires_grad
+        }
+        print(trainable_weights.keys())
 
         # Save model checkpoint
         model_path = f"checkpoints/{exp_name}_exp_{experience_id}.pt"
         os.makedirs("checkpoints", exist_ok=True)
-        torch.save(model_weights, model_path)
+        torch.save(trainable_weights, model_path)
         
         # Log checkpoint as a W&B Artifact
         artifact = wandb.Artifact(name=f"{exp_name}_exp_{experience_id}_ckpt", type="model")
