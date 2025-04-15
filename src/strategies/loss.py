@@ -23,8 +23,6 @@ class CrossDispersionLoss(torch.nn.Module):
         # Text Prompt Dispersion Loss
         loss_dist_t = torch.pdist(text_features.to(torch.float), p=2).pow(2.0)
         loss_dist_t = loss_dist_t.mul(-self.txt_rbf_t).exp().mean()
-        print(loss_ce, loss_dist_t)
-        # exit()
 
         # Combined Loss
         total_loss = loss_ce + self.txt_beta * loss_dist_t

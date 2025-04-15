@@ -142,7 +142,7 @@ class CLIPPT(SupervisedTemplate):
             self.train_epochs = self.train_epochs_base_class
         else:
             self.train_mb_size = 4
-            self.train_epochs = 5
+            self.train_epochs = 6
 
         if self.regularization_method == 'freeze' and self.clock.train_exp_counter > 0:
             for param in self.model.parameters():
@@ -159,9 +159,13 @@ class CLIPPT(SupervisedTemplate):
         if self.clock.train_exp_counter > 0 and self.regularization_method == 'balance':
             reg_lambda = self.n_classes_per_exp[self.clock.train_exp_counter] / sum(
                 self.n_classes_per_exp[:self.clock.train_exp_counter])
-            for param in self.model.parameters():
+            for name, param in self.model.named_parameters():
                 if param.grad is not None:
-                    param.grad *= reg_lambda
+                    if "s_values" in name:
+                        param.grad /= (reg_lambda) ** 0.5  # special rule for s_values
+                    else:
+                        param.grad *= reg_lambda           # regular scaling
+
 
     def eval(self, experience_stream):
         """

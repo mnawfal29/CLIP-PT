@@ -19,8 +19,8 @@ os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 warnings.filterwarnings("ignore")
 
 datasets = dict(cub200=dict(dataset=CUB200FSCIL, train_epochs_base_class=6, train_mb_size_base_class=4),
-                cifar100=dict(dataset=CIFAR100FSCIL, train_mb_size_base_class=32, train_epochs_base_class=8),
-                miniimagenet=dict(dataset=MiniImageNetFSCIL, train_mb_size_base_class=32, train_epochs_base_class=5))
+                cifar100=dict(dataset=CIFAR100FSCIL, train_mb_size_base_class=32, train_epochs_base_class=6),
+                miniimagenet=dict(dataset=MiniImageNetFSCIL, train_mb_size_base_class=32, train_epochs_base_class=6))
 
 args = parse_args()
 print(vars(args))
@@ -36,8 +36,6 @@ img_preprocess = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16").f
 
 cfg = vars(args)
 cfg["description"] = "new architecture with prompt tuning"
-if args.D_s + args.D_g != 12:
-    args.D_g = 12 - args.D_s
 
 if __name__ == "__main__":
     wandb.init(project="clip-pt-new", save_code=True, settings=wandb.Settings(code_dir="."), config=cfg)
@@ -46,7 +44,7 @@ if __name__ == "__main__":
     wandb.define_metric("StreamForgetting/eval_phase/test_stream", summary="mean")
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    exp_name = f"model_{dataset_name}_L_g_{args.L_g}_L_s_{args.L_s}_D_g_{args.D_g}_D_s_{args.D_s}_TRM_{args.text_replace_method}_VRM_{args.vision_replace_method}"
+    exp_name = f"model_{dataset_name}_L_g_{args.L_g}_L_s_{args.L_s}_D_g_{args.D_g}_D_s_{args.D_s}_txt_beta_{args.txt_beta}_TRM_{args.text_replace_method}_VRM_{args.vision_replace_method}"
 
     Dataset = datasets[dataset_name]["dataset"]
     Dataset = Dataset(transform=img_preprocess)
@@ -68,7 +66,7 @@ if __name__ == "__main__":
         num_classes_per_exp=Dataset.num_classes_per_exp,
         classes_per_exp=Dataset.classes_per_exp,
         text_label_mapping=Dataset.text_label_mapping,
-        lr=0.00325,
+        lr=0.00375,
         txt_beta=args.txt_beta,
         use_scheduler=True,
         eval_mb_size=64,
@@ -96,9 +94,11 @@ if __name__ == "__main__":
         model_path = f"checkpoints/{exp_name}_exp_{experience_id}.pt"
         os.makedirs("checkpoints", exist_ok=True)
         torch.save(model_weights, model_path)
-
-        wandb.save(model_path)
-        print(f"Saved model checkpoint for experience {experience_id} at {model_path}")
+        
+        # Log checkpoint as a W&B Artifact
+        artifact = wandb.Artifact(name=f"{exp_name}_exp_{experience_id}_ckpt", type="model")
+        artifact.add_file(model_path)
+        wandb.log_artifact(artifact)
 
     torch.cuda.empty_cache()
     gc.collect()
