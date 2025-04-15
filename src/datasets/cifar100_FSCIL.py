@@ -16,10 +16,12 @@ class PKLDataset(Dataset):
     def __len__(self):
         return len(self.y)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx, test=True):
         img = Image.fromarray(self.x[idx]).convert('RGB')
         x = self.transform(img).pixel_values[0]  # Ensure transform returns a tensor
         y = self.y[idx]
+        if test:
+            return img, x, y
         return x, y
 
 class CIFAR100FSCIL:
