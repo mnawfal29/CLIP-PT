@@ -194,15 +194,11 @@ class MultiHeadSelfAttention(nn.Module):
         
         assert self.head_dim * num_heads == embed_dim, "Embedding dimension must be divisible by number of heads"
         
-        # self.qkv_proj = nn.Linear(input_dim, embed_dim * 3)  # Single projection for Q, K, V
-        # self.out_proj = nn.Linear(embed_dim, embed_dim)
-        
     def forward(self, x):
         batch_size, seq_length, input_dim = x.shape
         
         # Compute Q, K, V
         qkv = x.repeat(1, 1, 3)
-        # qkv = self.qkv_proj(x)  # Shape: (batch_size, seq_length, 3 * embed_dim)
         qkv = qkv.reshape(batch_size, seq_length, self.num_heads, 3 * self.head_dim)
         q, k, v = qkv.chunk(3, dim=-1)  # Each shape: (batch_size, seq_length, num_heads, head_dim)
         
@@ -216,7 +212,6 @@ class MultiHeadSelfAttention(nn.Module):
         out = torch.matmul(attn_weights, v)  # (batch_size, num_heads, seq_length, head_dim)
         out = out.permute(0, 2, 1, 3).reshape(batch_size, seq_length, self.embed_dim)
         
-        # return self.out_proj(out)  # Final linear projection
         return out
     
 
